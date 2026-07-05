@@ -1,0 +1,14 @@
+{
+  "projects": {
+    "default": "gen-lang-client-0595727372"
+  },
+  "targets": {
+    "gen-lang-client-0595727372": {
+      "hosting": {
+        "api": [
+          "api-crane-auralife"
+        ]
+      }
+    }
+  }
+}

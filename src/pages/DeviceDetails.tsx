@@ -1,0 +1,248 @@
+import React, { useState } from 'react';
+import { ArrowLeft, Clock, Settings2, Users, X } from 'lucide-react';
+import { AppDevice, AppSchedule, toggleDevice, addSchedule, shareDevice, removeShare } from '../lib/db';
+import { User } from 'firebase/auth';
+import { useTranslation } from '../lib/i18n';
+
+interface DeviceDetailsProps {
+  device: AppDevice;
+  schedules: AppSchedule[];
+  onBack: () => void;
+  user: User;
+}
+
+export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetailsProps) {
+  const [isCommandLoading, setIsCommandLoading] = useState(false);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showShareModal, setShowShareModal] = useState(false);
+
+  const [scheduleAction, setScheduleAction] = useState<'open' | 'closed'>('open');
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+
+  const [shareEmail, setShareEmail] = useState('');
+  const { t } = useTranslation();
+
+  const handleToggle = async () => {
+    if (!user.email) return;
+    setIsCommandLoading(true);
+    try {
+      await toggleDevice(device, device.status === 'open' ? 'closed' : 'open', user.email);
+    } catch (e) {
+      alert("Error sending command");
+    } finally {
+      setIsCommandLoading(false);
+    }
+  };
+
+  const handleScheduleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user.email || !scheduleDate || !scheduleTime) return;
+    
+    const dateTimeStr = `${scheduleDate}T${scheduleTime}`;
+    const ms = new Date(dateTimeStr).getTime();
+    
+    if (ms <= Date.now()) {
+      alert("Schedule time must be in the future");
+      return;
+    }
+
+    try {
+      await addSchedule(device, scheduleAction, ms, user.email);
+      setShowScheduleModal(false);
+    } catch (err) {
+      alert("Failed to schedule");
+    }
+  };
+
+  const handleShareSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!shareEmail) return;
+    try {
+      await shareDevice(device, shareEmail);
+      setShareEmail('');
+    } catch (err) {
+      alert("Failed to share");
+    }
+  };
+
+  const handleRemoveShare = async (email: string) => {
+    if (confirm(`Remove access for ${email}?`)) {
+      await removeShare(device, email);
+    }
+  };
+
+  const isOwner = device.owner_uid === user.uid;
+
+  return (
+    <div className="flex flex-col h-full gap-6">
+      <button onClick={onBack} className="flex items-center gap-2 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white self-start transition-colors">
+        <ArrowLeft className="w-4 h-4" /> {t('back')}
+      </button>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Main Control Card */}
+        <div className="lg:col-span-2 p-8 rounded-[40px] bg-white dark:bg-transparent dark:bg-gradient-to-br dark:from-white/10 dark:to-white/5 border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none backdrop-blur-xl relative overflow-hidden flex flex-col justify-between min-h-[400px]">
+          <div className="relative z-10 flex justify-between items-start">
+            <div>
+              <h2 className="text-3xl font-bold mb-1 text-slate-900 dark:text-white">{device.name}</h2>
+              <p className="text-slate-500 dark:text-slate-400 font-mono text-sm">{device.serial_number}</p>
+            </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-widest ${device.status === 'open' ? 'bg-emerald-100 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/20' : 'bg-red-100 text-red-600 border border-red-200 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/20'}`}>
+              {device.status === 'open' ? t('open') : t('close')}
+            </span>
+          </div>
+
+          <div className="relative z-10 flex flex-col items-center justify-center my-8">
+            <button 
+              onClick={handleToggle}
+              disabled={isCommandLoading}
+              className={`w-48 h-48 rounded-full flex flex-col items-center justify-center gap-3 transition-all duration-500 shadow-2xl relative
+                ${isCommandLoading ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 scale-95' : 
+                  device.status === 'open' ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 hover:scale-105' : 
+                  'bg-gradient-to-b from-red-500 to-red-700 text-white shadow-red-500/30 hover:scale-105'}
+                disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden`}
+            >
+              {isCommandLoading && (
+                <div className="absolute inset-0 rounded-full border-4 border-t-slate-300 dark:border-t-white/50 border-slate-200 dark:border-white/10 animate-spin"></div>
+              )}
+              
+              <div className="relative w-24 h-24 mb-2">
+                {/* Pipe base */}
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-4 border-white/30 bg-black/20"></div>
+                {/* Handle that rotates */}
+                <div 
+                  className={`absolute top-1/2 left-1/2 w-16 h-4 -mt-2 -ml-8 bg-white rounded-full shadow-lg transition-transform duration-700 origin-center`}
+                  style={{ transform: device.status === 'open' ? 'rotate(0deg)' : 'rotate(180deg)' }}
+                >
+                  {/* Handle grip */}
+                  <div className="absolute right-0 top-0 w-6 h-full bg-black/20 rounded-r-full"></div>
+                </div>
+              </div>
+
+              <span className="font-bold tracking-widest uppercase text-sm z-10">
+                {isCommandLoading ? t('claiming') : device.status === 'open' ? t('close') : t('open')}
+              </span>
+            </button>
+            <p className="text-center mt-6 text-sm text-slate-500 dark:text-slate-400 max-w-xs">
+              {t('tap_to_command')}
+            </p>
+          </div>
+        </div>
+
+        {/* Details & Actions */}
+        <div className="flex flex-col gap-6">
+          <div className="p-6 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 shadow-sm dark:shadow-none backdrop-blur-xl">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500 mb-4 flex items-center gap-2"><Settings2 className="w-4 h-4"/> {t('specifications')}</h3>
+            <div className="space-y-4 text-sm">
+              <div className="flex justify-between border-b border-slate-100 dark:border-white/5 pb-2">
+                <span className="text-slate-500 dark:text-slate-400">{t('owner')}</span>
+                <span className="text-slate-900 dark:text-white font-medium max-w-[150px] truncate" title={device.owner_email}>{device.owner_email}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 dark:border-white/5 pb-2">
+                <span className="text-slate-500 dark:text-slate-400">{t('last_seen')}</span>
+                <span className="text-slate-900 dark:text-white">{new Date(device.last_seen_at).toLocaleTimeString()}</span>
+              </div>
+              <div className="flex justify-between border-b border-slate-100 dark:border-white/5 pb-2">
+                <span className="text-slate-500 dark:text-slate-400">{t('my_access')}</span>
+                <span className="capitalize text-slate-900 dark:text-white">{isOwner ? t('owner') : t('shared')}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 dark:text-slate-400">{t('pending_schedules')}</span>
+                <span className="text-slate-900 dark:text-white">{schedules.filter(s => s.status === 'pending').length}</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 flex-1">
+            <button onClick={() => setShowScheduleModal(true)} className="p-4 rounded-3xl bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 dark:bg-indigo-600/10 dark:border-indigo-500/20 dark:hover:bg-indigo-600/20 transition-all flex flex-col items-center justify-center gap-2 text-indigo-600 dark:text-indigo-300">
+              <Clock className="w-6 h-6" />
+              <span className="text-sm font-semibold text-slate-900 dark:text-white">{t('schedules')}</span>
+            </button>
+            <button onClick={() => setShowShareModal(true)} className="p-4 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:bg-slate-50 dark:hover:bg-white/10 transition-all flex flex-col items-center justify-center gap-2 text-slate-600 dark:text-slate-300 shadow-sm dark:shadow-none">
+              <Users className="w-6 h-6" />
+              <span className="text-sm font-semibold text-slate-900 dark:text-white">{t('device_sharing')}</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Schedule Modal */}
+      {showScheduleModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#0f1219] border border-slate-200 dark:border-white/10 rounded-[32px] p-8 max-w-md w-full relative shadow-2xl">
+            <button onClick={() => setShowScheduleModal(false)} className="absolute top-6 right-6 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"><X className="w-5 h-5"/></button>
+            <h3 className="text-xl font-bold mb-6 text-slate-900 dark:text-white">{t('create_schedule')}</h3>
+            
+            <form onSubmit={handleScheduleSubmit}>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 uppercase">{t('action')}</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setScheduleAction('open')} className={`flex-1 py-2 rounded-xl text-sm font-semibold border ${scheduleAction === 'open' ? 'bg-emerald-50 border-emerald-200 text-emerald-600 dark:bg-emerald-500/20 dark:border-emerald-500/50 dark:text-emerald-400' : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-white/5 dark:border-white/10 dark:text-slate-400'}`}>{t('open')}</button>
+                  <button type="button" onClick={() => setScheduleAction('closed')} className={`flex-1 py-2 rounded-xl text-sm font-semibold border ${scheduleAction === 'closed' ? 'bg-slate-100 border-slate-300 text-slate-800 dark:bg-slate-700 dark:border-slate-500 dark:text-slate-300' : 'bg-slate-50 border-slate-200 text-slate-600 dark:bg-white/5 dark:border-white/10 dark:text-slate-400'}`}>{t('close')}</button>
+                </div>
+              </div>
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 uppercase">{t('date')}</label>
+                <input type="date" required value={scheduleDate} onChange={e => setScheduleDate(e.target.value)} className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500" />
+              </div>
+              <div className="mb-8">
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 uppercase">{t('time')}</label>
+                <input type="time" required value={scheduleTime} onChange={e => setScheduleTime(e.target.value)} className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500" />
+              </div>
+              
+              <button type="submit" className="w-full px-4 py-3 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-indigo-500/20">
+                {t('save_schedule')}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Sharing Modal */}
+      {showShareModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 dark:bg-black/60 backdrop-blur-sm">
+          <div className="bg-white dark:bg-[#0f1219] border border-slate-200 dark:border-white/10 rounded-[32px] p-8 max-w-md w-full relative shadow-2xl">
+            <button onClick={() => setShowShareModal(false)} className="absolute top-6 right-6 text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"><X className="w-5 h-5"/></button>
+            <h3 className="text-xl font-bold mb-6 text-slate-900 dark:text-white">{t('device_sharing')}</h3>
+            
+            {isOwner ? (
+              <form onSubmit={handleShareSubmit} className="mb-8">
+                <label className="block text-xs font-semibold text-slate-500 dark:text-slate-400 mb-2 uppercase">{t('invite_email')}</label>
+                <div className="flex gap-2">
+                  <input type="email" required placeholder="user@example.com" value={shareEmail} onChange={e => setShareEmail(e.target.value)} className="flex-1 bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 text-sm" />
+                  <button type="submit" className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white rounded-xl text-sm font-semibold transition-all">{t('add')}</button>
+                </div>
+              </form>
+            ) : (
+              <div className="mb-8 p-4 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-200 dark:border-white/10 text-sm text-slate-500 dark:text-slate-400">
+                {t('only_owner_can_invite').replace('{}', device.owner_email)}
+              </div>
+            )}
+
+            <div>
+              <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-3 uppercase">{t('people_access')}</h4>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
+                  <span className="text-sm text-slate-900 dark:text-white">{device.owner_email}</span>
+                  <span className="text-xs px-2 py-1 bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400 rounded border border-indigo-100 dark:border-transparent">{t('owner')}</span>
+                </div>
+                {device.shared_with.map(email => (
+                  <div key={email} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-white/5 rounded-xl border border-slate-100 dark:border-white/5">
+                    <span className="text-sm truncate mr-2 text-slate-900 dark:text-white">{email}</span>
+                    {isOwner ? (
+                      <button onClick={() => handleRemoveShare(email)} className="text-xs text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300">{t('remove')}</button>
+                    ) : (
+                      <span className="text-xs px-2 py-1 bg-slate-200 text-slate-600 dark:bg-white/10 dark:text-slate-400 rounded">{t('shared')}</span>
+                    )}
+                  </div>
+                ))}
+                {device.shared_with.length === 0 && <p className="text-sm text-slate-500 italic px-2">{t('not_shared')}</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

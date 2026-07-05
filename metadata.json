@@ -1,0 +1,6 @@
+{
+  "name": "Crane IoT Platform",
+  "description": "IoT Control Platform for pipe cranes with scheduling, sharing, and real-time management.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

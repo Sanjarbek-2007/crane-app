@@ -11,18 +11,24 @@ const PORT = Number(process.env.PORT || 8092);
 const ALLOWED_ORIGINS = (process.env.ALLOWED_ORIGINS || "").split(",").map((s) => s.trim()).filter(Boolean);
 
 const app = express();
-app.use(express.json());
 
-// Only the browser-invoked /api/* routes need CORS - /device/sync is never
-// called from a browser so it's mounted with no CORS handling at all.
+// Mounted globally (not per-route) so it also intercepts OPTIONS preflight
+// requests - Express's router matches routes by exact method, so a `cors()`
+// instance only chained onto e.g. `app.post(...)` never runs for the
+// browser's preflight OPTIONS request, which then gets Express's bare
+// default response with no CORS headers and fails client-side as an opaque
+// "NetworkError" before the real request is ever sent.
 // `callback(null, false)` (not an Error) - CORS is enforced by the browser
 // withholding the response from JS when headers are missing; throwing here
-// would just surface as an unhandled 500 with a stack trace.
+// would just surface as an unhandled 500 with a stack trace. /device/sync
+// is never called from a browser, so these headers are simply unused there.
 const apiCors = cors({
   origin: (origin, callback) => {
     callback(null, !origin || ALLOWED_ORIGINS.includes(origin));
   },
 });
+app.use(apiCors);
+app.use(express.json());
 
 function hasDeviceAccess(device: any, uid: string, email: string): boolean {
   return device.owner_uid === uid || (device.shared_with as string[]).includes(email);
@@ -40,7 +46,7 @@ function h(fn: AsyncHandler) {
 
 // ---- Device provisioning / claim (browser, authenticated) ----
 
-app.post("/api/devices/claim", apiCors, requireAuth, h(async (req, res) => {
+app.post("/api/devices/claim", requireAuth, h(async (req, res) => {
   const claimCode = String(req.body?.claimCode || "").trim();
   if (!claimCode) {
     res.status(400).json({ error: "claimCode is required" });
@@ -90,13 +96,13 @@ app.post("/api/devices/claim", apiCors, requireAuth, h(async (req, res) => {
 
 // ---- Devices ----
 
-app.get("/api/devices", apiCors, requireAuth, h(async (req, res) => {
+app.get("/api/devices", requireAuth, h(async (req, res) => {
   const { uid, email } = req.user!;
   const result = await pool.query(`SELECT * FROM devices WHERE owner_uid = $1 OR $2 = ANY(shared_with)`, [uid, email]);
   res.json(result.rows);
 }));
 
-app.patch("/api/devices/:id", apiCors, requireAuth, h(async (req, res) => {
+app.patch("/api/devices/:id", requireAuth, h(async (req, res) => {
   const { uid, email } = req.user!;
   const status = req.body?.status;
   if (status !== "open" && status !== "closed") {
@@ -126,7 +132,7 @@ app.patch("/api/devices/:id", apiCors, requireAuth, h(async (req, res) => {
   res.json({ ...device, status, last_seen_at: now });
 }));
 
-app.post("/api/devices/:id/share", apiCors, requireAuth, h(async (req, res) => {
+app.post("/api/devices/:id/share", requireAuth, h(async (req, res) => {
   const { uid } = req.user!;
   const emailToShare = String(req.body?.email || "").trim();
   if (!emailToShare) {
@@ -152,7 +158,7 @@ app.post("/api/devices/:id/share", apiCors, requireAuth, h(async (req, res) => {
   res.json({ ok: true });
 }));
 
-app.delete("/api/devices/:id/share", apiCors, requireAuth, h(async (req, res) => {
+app.delete("/api/devices/:id/share", requireAuth, h(async (req, res) => {
   const { uid } = req.user!;
   const emailToRemove = String(req.body?.email || "").trim();
 
@@ -172,7 +178,7 @@ app.delete("/api/devices/:id/share", apiCors, requireAuth, h(async (req, res) =>
   res.json({ ok: true });
 }));
 
-app.delete("/api/devices/:id", apiCors, requireAuth, h(async (req, res) => {
+app.delete("/api/devices/:id", requireAuth, h(async (req, res) => {
   const { uid } = req.user!;
   const deviceRes = await pool.query(`SELECT * FROM devices WHERE id = $1`, [req.params.id]);
   if (deviceRes.rows.length === 0) {
@@ -189,7 +195,7 @@ app.delete("/api/devices/:id", apiCors, requireAuth, h(async (req, res) => {
 
 // ---- Logs (read-only) ----
 
-app.get("/api/logs", apiCors, requireAuth, h(async (req, res) => {
+app.get("/api/logs", requireAuth, h(async (req, res) => {
   const { email } = req.user!;
   const result = await pool.query(`SELECT * FROM logs WHERE $1 = ANY(related_emails) ORDER BY created_at DESC`, [email]);
   res.json(result.rows);
@@ -197,13 +203,13 @@ app.get("/api/logs", apiCors, requireAuth, h(async (req, res) => {
 
 // ---- Schedules ----
 
-app.get("/api/schedules", apiCors, requireAuth, h(async (req, res) => {
+app.get("/api/schedules", requireAuth, h(async (req, res) => {
   const { email } = req.user!;
   const result = await pool.query(`SELECT * FROM schedules WHERE $1 = ANY(related_emails) ORDER BY scheduled_at ASC`, [email]);
   res.json(result.rows);
 }));
 
-app.post("/api/schedules", apiCors, requireAuth, h(async (req, res) => {
+app.post("/api/schedules", requireAuth, h(async (req, res) => {
   const { uid, email } = req.user!;
   const { device_id, action, scheduled_at } = req.body || {};
   if ((action !== "open" && action !== "closed") || !device_id || !Number.isFinite(scheduled_at)) {
@@ -232,7 +238,7 @@ app.post("/api/schedules", apiCors, requireAuth, h(async (req, res) => {
   res.json({ id });
 }));
 
-app.delete("/api/schedules/:id", apiCors, requireAuth, h(async (req, res) => {
+app.delete("/api/schedules/:id", requireAuth, h(async (req, res) => {
   const { email } = req.user!;
   const result = await pool.query(`SELECT * FROM schedules WHERE id = $1`, [req.params.id]);
   if (result.rows.length === 0) {

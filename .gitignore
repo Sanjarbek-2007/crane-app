@@ -6,9 +6,4 @@ coverage/
 *.log
 .env*
 !.env.example
-
-# Cloud Functions
-functions/lib/
-functions/service-account.json
-firebase-debug.log
-.firebase/
+!backend/.env.example

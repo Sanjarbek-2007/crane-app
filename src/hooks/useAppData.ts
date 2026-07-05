@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '../lib/AuthContext';
-import { AppDevice, AppLog, AppSchedule, subscribeToDevices, subscribeToLogs, subscribeToSchedules, executeDueSchedules } from '../lib/db';
+import { AppDevice, AppLog, AppSchedule, subscribeToDevices, subscribeToLogs, subscribeToSchedules } from '../lib/db';
 
 export function useAppData() {
   const { user } = useAuth();
@@ -10,7 +10,10 @@ export function useAppData() {
 
   useEffect(() => {
     if (!user || !user.email) return;
-    
+
+    // Due schedules are executed server-side by the backend's scheduler now
+    // (runs continuously regardless of whether any browser tab is open),
+    // so this hook only needs to poll for the current state.
     const unsubDevices = subscribeToDevices(user.email, user.uid, setDevices);
     const unsubLogs = subscribeToLogs(user.email, setLogs);
     const unsubSchedules = subscribeToSchedules(user.email, setSchedules);
@@ -21,17 +24,6 @@ export function useAppData() {
       unsubSchedules();
     };
   }, [user]);
-
-  // Frontend cron job to execute due schedules
-  useEffect(() => {
-    if (!user) return;
-    const interval = setInterval(() => {
-      if (schedules.length > 0 && devices.length > 0) {
-        executeDueSchedules(schedules, devices);
-      }
-    }, 5000);
-    return () => clearInterval(interval);
-  }, [schedules, devices, user]);
 
   return { devices, logs, schedules };
 }

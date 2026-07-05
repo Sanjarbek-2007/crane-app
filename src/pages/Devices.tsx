@@ -24,7 +24,7 @@ export function Devices({ devices, onSelectDevice, user }: DevicesProps) {
       setShowClaimModal(false);
       setClaimCode('');
     } catch (e) {
-      alert("Error claiming device");
+      alert(e instanceof Error ? e.message : "Error claiming device");
     } finally {
       setClaiming(false);
     }
@@ -104,7 +104,7 @@ export function Devices({ devices, onSelectDevice, user }: DevicesProps) {
             
             <input 
               type="text" 
-              placeholder="e.g. CRN-10492" 
+              placeholder="e.g. CRN-00001-VNXQKP (the full code, not just the serial)"
               value={claimCode}
               onChange={e => setClaimCode(e.target.value)}
               className="w-full bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-xl px-4 py-3 text-slate-900 dark:text-white mb-6 focus:outline-none focus:border-indigo-500"

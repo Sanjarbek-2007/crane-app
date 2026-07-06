@@ -39,9 +39,11 @@ async function runDueSchedules(): Promise<void> {
           continue;
         }
 
-        await client.query(`UPDATE devices SET status = $1, last_seen_at = $2 WHERE id = $3`, [
+        // Sets desired_status only, same as a manual button press - the
+        // device is the one that confirms it via /device/sync once it
+        // actually starts and finishes moving.
+        await client.query(`UPDATE devices SET desired_status = $1 WHERE id = $2`, [
           schedule.action,
-          now,
           schedule.device_id,
         ]);
 

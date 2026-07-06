@@ -74,8 +74,8 @@ app.post("/api/devices/claim", requireAuth, h(async (req, res) => {
     const now = Date.now();
 
     await client.query(
-      `INSERT INTO devices (id, serial_number, name, status, last_seen_at, owner_uid, owner_email, shared_with)
-       VALUES ($1, $2, $3, 'closed', $4, $5, $6, '{}')`,
+      `INSERT INTO devices (id, serial_number, name, status, desired_status, last_seen_at, owner_uid, owner_email, shared_with)
+       VALUES ($1, $2, $3, 'closed', 'closed', $4, $5, $6, '{}')`,
       [deviceId, serial, `Crane ${serial}`, now, uid, email]
     );
     await client.query(
@@ -102,10 +102,17 @@ app.get("/api/devices", requireAuth, h(async (req, res) => {
   res.json(result.rows);
 }));
 
+// Sets the desired_status only - this is a REQUEST, not a confirmation.
+// `status` itself is never touched here; it only ever changes when the
+// device calls back through /device/sync reporting what it actually did
+// (opening/closing while moving, open/closed once the move is confirmed
+// finished). If the device never calls back (network issue), `status`
+// just stays wherever it last was - which correctly shows "not confirmed"
+// rather than lying that the command definitely worked.
 app.patch("/api/devices/:id", requireAuth, h(async (req, res) => {
   const { uid, email } = req.user!;
-  const status = req.body?.status;
-  if (status !== "open" && status !== "closed") {
+  const desiredStatus = req.body?.status;
+  if (desiredStatus !== "open" && desiredStatus !== "closed") {
     res.status(400).json({ error: "status must be 'open' or 'closed'" });
     return;
   }
@@ -122,14 +129,14 @@ app.patch("/api/devices/:id", requireAuth, h(async (req, res) => {
   }
 
   const now = Date.now();
-  await pool.query(`UPDATE devices SET status = $1, last_seen_at = $2 WHERE id = $3`, [status, now, device.id]);
+  await pool.query(`UPDATE devices SET desired_status = $1 WHERE id = $2`, [desiredStatus, device.id]);
   await pool.query(
     `INSERT INTO logs (id, device_id, device_name, action, source, issued_by, created_at, related_emails)
      VALUES ($1, $2, $3, $4, 'manual', $5, $6, $7)`,
-    [randomUUID(), device.id, device.name, status, email, now, [device.owner_email, ...device.shared_with]]
+    [randomUUID(), device.id, device.name, desiredStatus, email, now, [device.owner_email, ...device.shared_with]]
   );
 
-  res.json({ ...device, status, last_seen_at: now });
+  res.json({ ...device, desired_status: desiredStatus });
 }));
 
 app.post("/api/devices/:id/share", requireAuth, h(async (req, res) => {
@@ -256,18 +263,30 @@ app.delete("/api/schedules/:id", requireAuth, h(async (req, res) => {
 // ---- Device-facing sync (plain GET, secret-based auth, no CORS) ----
 //
 // Designed for an Arduino that can only do AT-command-driven HTTP GET over
-// a slow GPRS link - no JSON body, no headers, no Firebase Auth. The
-// device's own `pos` report is stored for diagnostics only and never
-// written into `status`: `status` is the desired value set by the browser
-// or a schedule, and letting a stale device report clobber it on the next
-// poll would race against a command that was just issued.
+// a slow GPRS link - no JSON body, no headers, no Firebase Auth.
+//
+// This is the callback mechanism: the device's own `pos` report (its real,
+// physically-confirmed position) gets written straight into `status` -
+// that's what the UI shows. `desired_status` (set by a browser button or a
+// schedule) is what gets handed back as the commanded value; the device
+// decides for itself whether/when to act on it, exactly like a local
+// button press does. If the device never calls back again (dead network,
+// power loss mid-move), `status` just stays on whatever it last reported
+// (typically 'opening'/'closing') instead of a request handler optimistically
+// claiming the move definitely succeeded.
+const VALID_POSITIONS = ["closed", "open", "opening", "closing"];
 
 app.get("/device/sync", h(async (req, res) => {
   const serial = String(req.query.serial || "");
   const secret = String(req.query.secret || "");
   const pos = String(req.query.pos || "");
 
-  if (!serial || !secret || !pos) {
+  // Temporary diagnostic logging (secret redacted) - lets us confirm
+  // whether the physical device is reaching this endpoint at all, since a
+  // 403/400 doesn't otherwise show up anywhere visible.
+  console.log(`[device/sync] from ${req.ip} serial=${serial || "(missing)"} pos=${pos || "(missing)"} hasSecret=${!!secret}`);
+
+  if (!serial || !secret || !pos || !VALID_POSITIONS.includes(pos)) {
     res.status(400).send("bad request");
     return;
   }
@@ -295,14 +314,14 @@ app.get("/device/sync", h(async (req, res) => {
     return;
   }
 
-  const deviceRes = await pool.query(`SELECT status FROM devices WHERE id = $1`, [secretRow.device_id]);
+  const deviceRes = await pool.query(`SELECT desired_status FROM devices WHERE id = $1`, [secretRow.device_id]);
   if (deviceRes.rows.length === 0) {
     res.status(200).type("text/plain").send("closed");
     return;
   }
 
-  await pool.query(`UPDATE devices SET last_seen_at = $1 WHERE id = $2`, [now, secretRow.device_id]);
-  res.status(200).type("text/plain").send(deviceRes.rows[0].status);
+  await pool.query(`UPDATE devices SET status = $1, last_seen_at = $2 WHERE id = $3`, [pos, now, secretRow.device_id]);
+  res.status(200).type("text/plain").send(deviceRes.rows[0].desired_status);
 }));
 
 app.get("/healthz", (_req, res) => res.status(200).send("ok"));

@@ -6,7 +6,13 @@ export interface AppDevice {
   id: string;
   serial_number: string;
   name: string;
-  status: 'open' | 'closed' | 'offline';
+  // status is device-CONFIRMED (only ever set by the device itself calling
+  // back through /device/sync) - 'opening'/'closing' while a move is
+  // actually in progress, 'open'/'closed' only once the device reports it
+  // actually finished. desired_status is just the last command a user (or
+  // a schedule) asked for - it's optimistic and may not have happened yet.
+  status: 'open' | 'closed' | 'opening' | 'closing' | 'offline';
+  desired_status: 'open' | 'closed';
   last_seen_at: number;
   owner_uid: string;
   owner_email: string;

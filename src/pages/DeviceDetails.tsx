@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, Clock, Settings2, Users, X } from 'lucide-react';
 import { AppDevice, AppSchedule, toggleDevice, addSchedule, shareDevice, removeShare } from '../lib/db';
 import { User } from 'firebase/auth';
@@ -23,10 +23,38 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
   const [shareEmail, setShareEmail] = useState('');
   const { t } = useTranslation();
 
+  // device.status is device-confirmed (see AppDevice) - it only reaches
+  // 'open'/'closed' once the crane itself reports the move actually
+  // finished. When that confirmation just arrived, flash "Opened"/"Closed"
+  // for 2s before the button reverts to its normal actionable state.
+  const [justConfirmed, setJustConfirmed] = useState<'opened' | 'closed' | null>(null);
+  const prevStatusRef = useRef(device.status);
+
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = device.status;
+    if (prev === 'opening' && device.status === 'open') {
+      setJustConfirmed('opened');
+      const timer = setTimeout(() => setJustConfirmed(null), 2000);
+      return () => clearTimeout(timer);
+    }
+    if (prev === 'closing' && device.status === 'closed') {
+      setJustConfirmed('closed');
+      const timer = setTimeout(() => setJustConfirmed(null), 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [device.status]);
+
+  const isMidTransition = device.status === 'opening' || device.status === 'closing';
+
   const handleToggle = async () => {
-    if (!user.email) return;
+    if (!user.email || isMidTransition) return;
     setIsCommandLoading(true);
     try {
+      // This only sets the desired status - it's a request, not a
+      // confirmation. The button stays showing "Opening.../Closing..."
+      // (driven by device.status, not this call) until the device itself
+      // calls back to say it actually happened.
       await toggleDevice(device, device.status === 'open' ? 'closed' : 'open', user.email);
     } catch (e) {
       alert("Error sending command");
@@ -88,32 +116,38 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
               <h2 className="text-3xl font-bold mb-1 text-slate-900 dark:text-white">{device.name}</h2>
               <p className="text-slate-500 dark:text-slate-400 font-mono text-sm">{device.serial_number}</p>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-widest ${device.status === 'open' ? 'bg-emerald-100 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/20' : 'bg-red-100 text-red-600 border border-red-200 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/20'}`}>
-              {device.status === 'open' ? t('open') : t('close')}
+            <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-widest ${
+              device.status === 'open' ? 'bg-emerald-100 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/20' :
+              isMidTransition ? 'bg-slate-200 text-slate-600 border border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600' :
+              'bg-red-100 text-red-600 border border-red-200 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/20'
+            }`}>
+              {device.status === 'open' ? t('open') : device.status === 'opening' ? t('opening') : device.status === 'closing' ? t('closing') : t('close')}
             </span>
           </div>
 
           <div className="relative z-10 flex flex-col items-center justify-center my-8">
-            <button 
+            <button
               onClick={handleToggle}
-              disabled={isCommandLoading}
+              disabled={isCommandLoading || isMidTransition || justConfirmed !== null}
               className={`w-48 h-48 rounded-full flex flex-col items-center justify-center gap-3 transition-all duration-500 shadow-2xl relative
-                ${isCommandLoading ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 scale-95' : 
-                  device.status === 'open' ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 hover:scale-105' : 
+                ${isCommandLoading || isMidTransition ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 scale-95' :
+                  justConfirmed === 'opened' ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30' :
+                  justConfirmed === 'closed' ? 'bg-gradient-to-b from-red-500 to-red-700 text-white shadow-red-500/30' :
+                  device.status === 'open' ? 'bg-gradient-to-b from-emerald-400 to-emerald-600 text-white shadow-emerald-500/30 hover:scale-105' :
                   'bg-gradient-to-b from-red-500 to-red-700 text-white shadow-red-500/30 hover:scale-105'}
                 disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden`}
             >
-              {isCommandLoading && (
+              {(isCommandLoading || isMidTransition) && (
                 <div className="absolute inset-0 rounded-full border-4 border-t-slate-300 dark:border-t-white/50 border-slate-200 dark:border-white/10 animate-spin"></div>
               )}
-              
+
               <div className="relative w-24 h-24 mb-2">
                 {/* Pipe base */}
                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-4 border-white/30 bg-black/20"></div>
                 {/* Handle that rotates */}
-                <div 
+                <div
                   className={`absolute top-1/2 left-1/2 w-16 h-4 -mt-2 -ml-8 bg-white rounded-full shadow-lg transition-transform duration-700 origin-center`}
-                  style={{ transform: device.status === 'open' ? 'rotate(0deg)' : 'rotate(180deg)' }}
+                  style={{ transform: device.status === 'open' || justConfirmed === 'opened' ? 'rotate(0deg)' : 'rotate(180deg)' }}
                 >
                   {/* Handle grip */}
                   <div className="absolute right-0 top-0 w-6 h-full bg-black/20 rounded-r-full"></div>
@@ -121,7 +155,11 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
               </div>
 
               <span className="font-bold tracking-widest uppercase text-sm z-10">
-                {isCommandLoading ? t('claiming') : device.status === 'open' ? t('close') : t('open')}
+                {justConfirmed === 'opened' ? t('opened') :
+                 justConfirmed === 'closed' ? t('closed') :
+                 isMidTransition ? (device.status === 'opening' ? t('opening') : t('closing')) :
+                 isCommandLoading ? t('claiming') :
+                 device.status === 'open' ? t('close') : t('open')}
               </span>
             </button>
             <p className="text-center mt-6 text-sm text-slate-500 dark:text-slate-400 max-w-xs">

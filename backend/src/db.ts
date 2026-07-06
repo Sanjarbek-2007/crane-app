@@ -10,12 +10,28 @@ export async function migrate(): Promise<void> {
       id TEXT PRIMARY KEY,
       serial_number TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
-      status TEXT NOT NULL DEFAULT 'closed' CHECK (status IN ('open', 'closed')),
+      -- status is the device-CONFIRMED state (only ever written by
+      -- /device/sync from what the device itself reports) - 'opening'/
+      -- 'closing' are the in-progress callback states, 'open'/'closed' are
+      -- only reached once the device reports the move actually finished.
+      -- desired_status is what a user last asked for (browser button or a
+      -- schedule) - the device polls this and decides for itself whether/
+      -- when to act on it, exactly like a local button press does.
+      status TEXT NOT NULL DEFAULT 'closed' CHECK (status IN ('open', 'closed', 'opening', 'closing')),
+      desired_status TEXT NOT NULL DEFAULT 'closed' CHECK (desired_status IN ('open', 'closed')),
       last_seen_at BIGINT,
       owner_uid TEXT NOT NULL,
       owner_email TEXT NOT NULL,
       shared_with TEXT[] NOT NULL DEFAULT '{}'
     );
+
+    -- Idempotent upgrade path for a devices table that already existed
+    -- before desired_status/the wider status CHECK were introduced.
+    ALTER TABLE devices ADD COLUMN IF NOT EXISTS desired_status TEXT NOT NULL DEFAULT 'closed';
+    ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_status_check;
+    ALTER TABLE devices ADD CONSTRAINT devices_status_check CHECK (status IN ('open', 'closed', 'opening', 'closing'));
+    ALTER TABLE devices DROP CONSTRAINT IF EXISTS devices_desired_status_check;
+    ALTER TABLE devices ADD CONSTRAINT devices_desired_status_check CHECK (desired_status IN ('open', 'closed'));
 
     CREATE TABLE IF NOT EXISTS device_secrets (
       serial_number TEXT PRIMARY KEY,

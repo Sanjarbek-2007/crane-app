@@ -63,7 +63,12 @@ export function Devices({ devices, onSelectDevice, user }: DevicesProps) {
               >
                 <div className="flex justify-between items-start mb-6">
                   <div className="flex items-center gap-3">
-                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${device.status === 'open' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : device.status === 'closed' ? 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300' : 'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400'}`}>
+                    <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                      device.status === 'open' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' :
+                      device.status === 'closed' ? 'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-300' :
+                      device.status === 'opening' || device.status === 'closing' ? 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300' :
+                      'bg-red-100 text-red-600 dark:bg-red-500/20 dark:text-red-400'
+                    }`}>
                       {device.status === 'offline' ? <WifiOff className="w-5 h-5" /> : <Settings2 className="w-5 h-5" />}
                     </div>
                     <div>
@@ -79,8 +84,16 @@ export function Devices({ devices, onSelectDevice, user }: DevicesProps) {
                 <div className="mt-auto">
                   <div className="flex items-center justify-between text-sm mb-2">
                     <span className="text-slate-500 dark:text-slate-400">{t('current_status')}</span>
-                    <span className={`font-semibold capitalize ${device.status === 'open' ? 'text-emerald-600 dark:text-emerald-400' : device.status === 'closed' ? 'text-slate-600 dark:text-slate-300' : 'text-red-600 dark:text-red-400'}`}>
-                      {device.status === 'open' ? t('open') : t('close')}
+                    <span className={`font-semibold capitalize ${
+                      device.status === 'open' ? 'text-emerald-600 dark:text-emerald-400' :
+                      device.status === 'closed' ? 'text-slate-600 dark:text-slate-300' :
+                      device.status === 'opening' || device.status === 'closing' ? 'text-slate-500 dark:text-slate-400' :
+                      'text-red-600 dark:text-red-400'
+                    }`}>
+                      {device.status === 'open' ? t('open') :
+                       device.status === 'opening' ? t('opening') :
+                       device.status === 'closing' ? t('closing') :
+                       t('close')}
                     </span>
                   </div>
                   <div className="flex items-center justify-between text-xs text-slate-500 border-t border-slate-100 dark:border-white/5 pt-3 mt-3">

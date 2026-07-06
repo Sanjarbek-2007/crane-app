@@ -56,10 +56,15 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
   const isMidTransition = device.status === 'opening' || device.status === 'closing';
 
   // How long to wait for the device to acknowledge a command before telling
-  // the user it might not have gone through. Cellular round-trips over
-  // GPRS have been observed taking up to ~6s, so 10s gives real headroom
-  // rather than a false alarm on a slow-but-working connection.
-  const CONFIRMATION_TIMEOUT_MS = 10000;
+  // the user it might not have gone through. The device only polls the
+  // server every ~7s when idle, and a single AT+HTTP exchange over 2G/GPRS
+  // can itself legitimately take up to ~30s by design - so the real
+  // worst-case path (poll wait + HTTP round trip + this page's own 4s
+  // polling to notice) is well over 10s even when everything is working
+  // fine. 10s caused false "device not responding" alarms on normal,
+  // successful commands - 25s gives real headroom for a working-but-slow
+  // connection while still catching an actually-unresponsive device.
+  const CONFIRMATION_TIMEOUT_MS = 25000;
 
   const handleToggle = async () => {
     if (!user.email || isMidTransition) return;

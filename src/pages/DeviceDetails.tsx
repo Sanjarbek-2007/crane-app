@@ -30,6 +30,14 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
   const [justConfirmed, setJustConfirmed] = useState<'opened' | 'closed' | null>(null);
   const prevStatusRef = useRef(device.status);
 
+  // Always holds the latest status, readable from inside the setTimeout
+  // closure below (which is set up once per press and must see status as
+  // of 10s later, not as of the moment the button was pressed).
+  const statusRef = useRef(device.status);
+  useEffect(() => {
+    statusRef.current = device.status;
+  }, [device.status]);
+
   useEffect(() => {
     const prev = prevStatusRef.current;
     prevStatusRef.current = device.status;
@@ -47,15 +55,31 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
 
   const isMidTransition = device.status === 'opening' || device.status === 'closing';
 
+  // How long to wait for the device to acknowledge a command before telling
+  // the user it might not have gone through. Cellular round-trips over
+  // GPRS have been observed taking up to ~6s, so 10s gives real headroom
+  // rather than a false alarm on a slow-but-working connection.
+  const CONFIRMATION_TIMEOUT_MS = 10000;
+
   const handleToggle = async () => {
     if (!user.email || isMidTransition) return;
     setIsCommandLoading(true);
+    const statusBeforeRequest = device.status;
     try {
       // This only sets the desired status - it's a request, not a
       // confirmation. The button stays showing "Opening.../Closing..."
       // (driven by device.status, not this call) until the device itself
       // calls back to say it actually happened.
       await toggleDevice(device, device.status === 'open' ? 'closed' : 'open', user.email);
+
+      // If the device hasn't started moving (status hasn't left its
+      // pre-request value) within CONFIRMATION_TIMEOUT_MS, let the user
+      // know rather than leaving them guessing whether it was received.
+      setTimeout(() => {
+        if (statusRef.current === statusBeforeRequest) {
+          alert(t('device_not_responding'));
+        }
+      }, CONFIRMATION_TIMEOUT_MS);
     } catch (e) {
       alert("Error sending command");
     } finally {

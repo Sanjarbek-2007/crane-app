@@ -280,13 +280,27 @@ app.get("/device/sync", h(async (req, res) => {
   const serial = String(req.query.serial || "");
   const secret = String(req.query.secret || "");
   const pos = String(req.query.pos || "");
+  // Optional - only present on the poll immediately after a LOCAL button
+  // press. A local press changes the device's actual position without
+  // ever telling the server what the new target should be, so without
+  // this, the next routine poll would hand back whatever desired_status
+  // was last set by the website (stale, contradicting what the button
+  // just did) and the device would immediately reverse itself the moment
+  // its local move finished. This tells the server "a physical action just
+  // happened here - the desired target is now this," exactly as if the
+  // website had requested it.
+  const setDesired = String(req.query.set_desired || "");
 
   // Temporary diagnostic logging (secret redacted) - lets us confirm
   // whether the physical device is reaching this endpoint at all, since a
   // 403/400 doesn't otherwise show up anywhere visible.
-  console.log(`[device/sync] from ${req.ip} serial=${serial || "(missing)"} pos=${pos || "(missing)"} hasSecret=${!!secret}`);
+  console.log(`[device/sync] from ${req.ip} serial=${serial || "(missing)"} pos=${pos || "(missing)"} setDesired=${setDesired || "(none)"} hasSecret=${!!secret}`);
 
   if (!serial || !secret || !pos || !VALID_POSITIONS.includes(pos)) {
+    res.status(400).send("bad request");
+    return;
+  }
+  if (setDesired && setDesired !== "open" && setDesired !== "closed") {
     res.status(400).send("bad request");
     return;
   }
@@ -312,6 +326,10 @@ app.get("/device/sync", h(async (req, res) => {
   if (!secretRow.device_id) {
     res.status(200).type("text/plain").send("closed");
     return;
+  }
+
+  if (setDesired) {
+    await pool.query(`UPDATE devices SET desired_status = $1 WHERE id = $2`, [setDesired, secretRow.device_id]);
   }
 
   const deviceRes = await pool.query(`SELECT desired_status FROM devices WHERE id = $1`, [secretRow.device_id]);

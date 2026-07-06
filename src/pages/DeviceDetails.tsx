@@ -53,7 +53,19 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
     }
   }, [device.status]);
 
-  const isMidTransition = device.status === 'opening' || device.status === 'closing';
+  // A "opening"/"closing" status is only meaningful while the device is
+  // actually still checking in - if it's gone completely silent (no
+  // last_seen_at update) well past how long a real move plus retries could
+  // possibly take, that status is just stale, not an ongoing move, and
+  // must not permanently lock the control out. 90s covers TRANSITION_MS
+  // (30s) plus the device's own poll interval/retry slack with real margin.
+  const STALE_THRESHOLD_MS = 90000;
+  const isStale = Date.now() - device.last_seen_at > STALE_THRESHOLD_MS;
+  const isMidTransition = (device.status === 'opening' || device.status === 'closing') && !isStale;
+  // Was showing a transition, but the device hasn't been heard from in
+  // way longer than a move could take - its real position is unknown, so
+  // offer both actions explicitly instead of guessing which one to show.
+  const isStaleTransition = (device.status === 'opening' || device.status === 'closing') && isStale;
 
   // How long to wait for the device to acknowledge a command before telling
   // the user it might not have gone through. The device only polls the
@@ -66,7 +78,7 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
   // connection while still catching an actually-unresponsive device.
   const CONFIRMATION_TIMEOUT_MS = 25000;
 
-  const handleToggle = async () => {
+  const handleToggle = async (explicitTarget?: 'open' | 'closed') => {
     if (!user.email || isMidTransition) return;
     setIsCommandLoading(true);
     const statusBeforeRequest = device.status;
@@ -75,7 +87,8 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
       // confirmation. The button stays showing "Opening.../Closing..."
       // (driven by device.status, not this call) until the device itself
       // calls back to say it actually happened.
-      await toggleDevice(device, device.status === 'open' ? 'closed' : 'open', user.email);
+      const target = explicitTarget || (device.status === 'open' ? 'closed' : 'open');
+      await toggleDevice(device, target, user.email);
 
       // If the device hasn't started moving (status hasn't left its
       // pre-request value) within CONFIRMATION_TIMEOUT_MS, let the user
@@ -146,17 +159,19 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
               <p className="text-slate-500 dark:text-slate-400 font-mono text-sm">{device.serial_number}</p>
             </div>
             <span className={`px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-widest ${
+              isStaleTransition ? 'bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-500/20 dark:text-amber-400 dark:border-amber-500/20' :
               device.status === 'open' ? 'bg-emerald-100 text-emerald-600 border border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-400 dark:border-emerald-500/20' :
               isMidTransition ? 'bg-slate-200 text-slate-600 border border-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:border-slate-600' :
               'bg-red-100 text-red-600 border border-red-200 dark:bg-red-500/20 dark:text-red-400 dark:border-red-500/20'
             }`}>
-              {device.status === 'open' ? t('open') : device.status === 'opening' ? t('opening') : device.status === 'closing' ? t('closing') : t('close')}
+              {isStaleTransition ? t('device_stale_badge') :
+               device.status === 'open' ? t('open') : device.status === 'opening' ? t('opening') : device.status === 'closing' ? t('closing') : t('close')}
             </span>
           </div>
 
           <div className="relative z-10 flex flex-col items-center justify-center my-8">
             <button
-              onClick={handleToggle}
+              onClick={() => handleToggle()}
               disabled={isCommandLoading || isMidTransition || justConfirmed !== null}
               className={`w-48 h-48 rounded-full flex flex-col items-center justify-center gap-3 transition-all duration-500 shadow-2xl relative
                 ${isCommandLoading || isMidTransition ? 'bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 scale-95' :
@@ -191,9 +206,33 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
                  device.status === 'open' ? t('close') : t('open')}
               </span>
             </button>
-            <p className="text-center mt-6 text-sm text-slate-500 dark:text-slate-400 max-w-xs">
-              {t('tap_to_command')}
-            </p>
+            {isStaleTransition ? (
+              <div className="mt-6 max-w-xs text-center">
+                <p className="text-sm text-amber-600 dark:text-amber-400 mb-4">
+                  {t('device_stale_transition')}
+                </p>
+                <div className="flex gap-3 justify-center">
+                  <button
+                    onClick={() => handleToggle('open')}
+                    disabled={isCommandLoading}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-widest bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 dark:bg-emerald-500/10 dark:border-emerald-500/20 dark:text-emerald-400 dark:hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                  >
+                    {t('open')}
+                  </button>
+                  <button
+                    onClick={() => handleToggle('closed')}
+                    disabled={isCommandLoading}
+                    className="px-4 py-2 rounded-xl text-xs font-semibold uppercase tracking-widest bg-red-50 border border-red-200 text-red-600 hover:bg-red-100 dark:bg-red-500/10 dark:border-red-500/20 dark:text-red-400 dark:hover:bg-red-500/20 transition-all disabled:opacity-50"
+                  >
+                    {t('close')}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="text-center mt-6 text-sm text-slate-500 dark:text-slate-400 max-w-xs">
+                {t('tap_to_command')}
+              </p>
+            )}
           </div>
         </div>
 

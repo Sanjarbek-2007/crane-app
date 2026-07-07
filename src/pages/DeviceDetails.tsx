@@ -11,6 +11,45 @@ interface DeviceDetailsProps {
   user: User;
 }
 
+// A real ball valve: handle aligned with the pipe (pointing left) = open,
+// handle perpendicular (pointing up) = closed - matching how these
+// actually work, not an abstract on/off icon.
+function ValveIcon({ isOpen }: { isOpen: boolean }) {
+  return (
+    <svg viewBox="0 0 200 140" className="w-32 h-[5.6rem] drop-shadow-lg">
+      {/* Left pipe, threaded */}
+      <rect x="0" y="55" width="66" height="30" rx="3" fill="#3b5bab" />
+      {[10, 20, 30, 40, 50, 60].map((x) => (
+        <line key={`l-${x}`} x1={x} y1="57" x2={x} y2="83" stroke="#28407f" strokeWidth="1.5" />
+      ))}
+      {/* Right pipe, threaded */}
+      <rect x="134" y="55" width="66" height="30" rx="3" fill="#3b5bab" />
+      {[140, 150, 160, 170, 180, 190].map((x) => (
+        <line key={`r-${x}`} x1={x} y1="57" x2={x} y2="83" stroke="#28407f" strokeWidth="1.5" />
+      ))}
+      {/* Coupling flanges */}
+      <rect x="58" y="47" width="18" height="46" rx="2" fill="#5b7bc7" stroke="#28407f" strokeWidth="1.5" />
+      <rect x="124" y="47" width="18" height="46" rx="2" fill="#5b7bc7" stroke="#28407f" strokeWidth="1.5" />
+      {/* Valve body */}
+      <circle cx="100" cy="70" r="40" fill="#4a6bbd" stroke="#28407f" strokeWidth="2.5" />
+      <circle cx="100" cy="70" r="27" fill="#3b5bab" stroke="#28407f" strokeWidth="1.5" />
+      {/* Handle pivot bolt */}
+      <circle cx="100" cy="70" r="9" fill="#1f2937" stroke="#0f172a" strokeWidth="1.5" />
+      {/* Handle - rotates around the pivot; left/aligned-with-pipe = open, up/perpendicular = closed */}
+      <g
+        style={{
+          transform: `rotate(${isOpen ? -90 : 0}deg)`,
+          transformOrigin: '100px 70px',
+          transition: 'transform 0.7s cubic-bezier(0.34, 1.2, 0.64, 1)',
+        }}
+      >
+        <rect x="93" y="15" width="14" height="58" rx="7" fill={isOpen ? '#10b981' : '#ef4444'} stroke={isOpen ? '#047857' : '#b91c1c'} strokeWidth="1.5" />
+        <rect x="84" y="8" width="32" height="18" rx="9" fill={isOpen ? '#059669' : '#dc2626'} stroke={isOpen ? '#047857' : '#b91c1c'} strokeWidth="1.5" />
+      </g>
+    </svg>
+  );
+}
+
 export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetailsProps) {
   const [isCommandLoading, setIsCommandLoading] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
@@ -185,17 +224,8 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
                 <div className="absolute inset-0 rounded-full border-4 border-t-slate-300 dark:border-t-white/50 border-slate-200 dark:border-white/10 animate-spin"></div>
               )}
 
-              <div className="relative w-24 h-24 mb-2">
-                {/* Pipe base */}
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full border-4 border-white/30 bg-black/20"></div>
-                {/* Handle that rotates */}
-                <div
-                  className={`absolute top-1/2 left-1/2 w-16 h-4 -mt-2 -ml-8 bg-white rounded-full shadow-lg transition-transform duration-700 origin-center`}
-                  style={{ transform: device.status === 'open' || justConfirmed === 'opened' ? 'rotate(0deg)' : 'rotate(180deg)' }}
-                >
-                  {/* Handle grip */}
-                  <div className="absolute right-0 top-0 w-6 h-full bg-black/20 rounded-r-full"></div>
-                </div>
+              <div className="mb-1">
+                <ValveIcon isOpen={device.status === 'open' || justConfirmed === 'opened'} />
               </div>
 
               <span className="font-bold tracking-widest uppercase text-sm z-10">

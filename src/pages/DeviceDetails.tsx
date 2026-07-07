@@ -3,6 +3,7 @@ import { ArrowLeft, Clock, Settings2, Users, X } from 'lucide-react';
 import { AppDevice, AppSchedule, toggleDevice, addSchedule, shareDevice, removeShare } from '../lib/db';
 import { User } from 'firebase/auth';
 import { useTranslation } from '../lib/i18n';
+import { useNotify } from '../lib/notifications';
 
 interface DeviceDetailsProps {
   device: AppDevice;
@@ -61,6 +62,7 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
 
   const [shareEmail, setShareEmail] = useState('');
   const { t } = useTranslation();
+  const { notify, confirmDialog } = useNotify();
 
   // device.status is device-confirmed (see AppDevice) - it only reaches
   // 'open'/'closed' once the crane itself reports the move actually
@@ -134,11 +136,11 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
       // know rather than leaving them guessing whether it was received.
       setTimeout(() => {
         if (statusRef.current === statusBeforeRequest) {
-          alert(t('device_not_responding'));
+          notify(t('device_not_responding'), 'error');
         }
       }, CONFIRMATION_TIMEOUT_MS);
     } catch (e) {
-      alert("Error sending command");
+      notify(t('error_sending_command'), 'error');
     } finally {
       setIsCommandLoading(false);
     }
@@ -147,12 +149,12 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
   const handleScheduleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user.email || !scheduleDate || !scheduleTime) return;
-    
+
     const dateTimeStr = `${scheduleDate}T${scheduleTime}`;
     const ms = new Date(dateTimeStr).getTime();
-    
+
     if (ms <= Date.now()) {
-      alert("Schedule time must be in the future");
+      notify(t('schedule_time_future'), 'error');
       return;
     }
 
@@ -160,7 +162,7 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
       await addSchedule(device, scheduleAction, ms, user.email);
       setShowScheduleModal(false);
     } catch (err) {
-      alert("Failed to schedule");
+      notify(t('error_scheduling'), 'error');
     }
   };
 
@@ -171,12 +173,12 @@ export function DeviceDetails({ device, schedules, onBack, user }: DeviceDetails
       await shareDevice(device, shareEmail);
       setShareEmail('');
     } catch (err) {
-      alert("Failed to share");
+      notify(t('error_sharing'), 'error');
     }
   };
 
   const handleRemoveShare = async (email: string) => {
-    if (confirm(`Remove access for ${email}?`)) {
+    if (await confirmDialog(t('confirm_remove_access').replace('{}', email))) {
       await removeShare(device, email);
     }
   };

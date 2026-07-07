@@ -3,12 +3,14 @@ import { AppSchedule, AppDevice, cancelSchedule } from '../lib/db';
 import { User } from 'firebase/auth';
 import { Clock, Trash2 } from 'lucide-react';
 import { useTranslation } from '../lib/i18n';
+import { useNotify } from '../lib/notifications';
 
 export function SchedulesView({ schedules, devices, user }: { schedules: AppSchedule[], devices: AppDevice[], user: User }) {
   const { t } = useTranslation();
+  const { confirmDialog } = useNotify();
 
   const handleCancel = async (id: string) => {
-    if (confirm("Cancel this schedule?")) {
+    if (await confirmDialog(t('confirm_cancel_schedule'))) {
       await cancelSchedule(id);
     }
   };

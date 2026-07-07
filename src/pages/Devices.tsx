@@ -3,6 +3,7 @@ import { Plus, Settings2, Signal, SignalHigh, WifiOff } from 'lucide-react';
 import { AppDevice, claimDevice } from '../lib/db';
 import { User } from 'firebase/auth';
 import { useTranslation } from '../lib/i18n';
+import { useNotify } from '../lib/notifications';
 
 interface DevicesProps {
   devices: AppDevice[];
@@ -15,6 +16,7 @@ export function Devices({ devices, onSelectDevice, user }: DevicesProps) {
   const [claimCode, setClaimCode] = useState('');
   const [claiming, setClaiming] = useState(false);
   const { t } = useTranslation();
+  const { notify } = useNotify();
 
   const handleClaim = async () => {
     if (!claimCode.trim() || !user.email) return;
@@ -24,7 +26,7 @@ export function Devices({ devices, onSelectDevice, user }: DevicesProps) {
       setShowClaimModal(false);
       setClaimCode('');
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Error claiming device");
+      notify(e instanceof Error ? e.message : t('error_claiming_device'), 'error');
     } finally {
       setClaiming(false);
     }

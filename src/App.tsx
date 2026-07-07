@@ -15,6 +15,7 @@ import { AuthScreen } from './components/AuthScreen';
 import { LanguageScreen } from './components/LanguageScreen';
 import { Activity } from 'lucide-react';
 import { useAppData } from './hooks/useAppData';
+import { NotificationProvider } from './lib/notifications';
 
 export type ViewType = 'dashboard' | 'devices' | 'device_details' | 'schedules' | 'profile';
 
@@ -94,8 +95,10 @@ function AppContent() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppContent />
-    </AuthProvider>
+    <NotificationProvider>
+      <AuthProvider>
+        <AppContent />
+      </AuthProvider>
+    </NotificationProvider>
   );
 }
